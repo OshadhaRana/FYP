@@ -1,0 +1,16 @@
+fastapi
+uvicorn
+pydantic
+pandas
+numpy
+scikit-learn
+xgboost
+joblib
+shap
+lime
+python-dotenv
+kaggle
+tensorflow>=2.13.0
+keras>=2.13.0
+matplotlib>=3.7.0
+seaborn>=0.12.0
