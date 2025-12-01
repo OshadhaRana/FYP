@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # 🔍 XAI FinCrime Detection System
 
 > Explainable AI-powered Financial Crime Detection using Multi-Model Ensemble
@@ -344,3 +345,7 @@ This project is submitted as a Final Year Project (FYP) for academic purposes.
 **Note**: Due to file size limitations, trained model files are not included in this repository. Please run the training script to generate models locally.
 
 ⭐ Star this repo if you found it helpful!
+=======
+# FYP
+Final Year Project
+>>>>>>> 28870250b5309fc381114a96091b06aa7398af0f
