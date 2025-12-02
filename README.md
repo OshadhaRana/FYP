@@ -328,17 +328,11 @@ This project is submitted as a Final Year Project (FYP) for academic purposes.
 
 ## 👤 Author
 
-**[Your Name]**
-- University: [Your University Name]
-- Program: [Your Degree Program]
+Oshadha Ranatunga
+- University: Staffordshire University
+- Program: Bachelors In Computer Science
 - Year: 2024/2025
-- GitHub: [@yourusername](https://github.com/yourusername)
-
-## 🙏 Acknowledgments
-
-- **Supervisor**: [Supervisor Name] for guidance and support
-- **PaySim Dataset**: Synthetic financial dataset creators
-- **Open Source Community**: TensorFlow, scikit-learn, SHAP, LIME contributors
+- GitHub: [OshadhaRana](https://github.com/OshadhaRana)
 
 ---
 
