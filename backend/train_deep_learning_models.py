@@ -9,13 +9,14 @@ import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
+from sklearn.preprocessing import LabelEncoder
 import joblib
 import json
 
 # Add backend to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from app.utils.preprocessing import TransactionPreprocessor
+from app.utils.preprocessing import Preprocessor
 from app.utils.sequence_preprocessing import SequencePreprocessor, TemporalFeatureEngineer
 from app.models.ml_models import FraudDetectionEnsemble
 from app.models.deep_learning_models import LSTMFraudDetector, CNN1DFraudDetector, MultiModelEnsemble
@@ -47,12 +48,17 @@ def train_traditional_models(train_df, val_df, test_df, models_dir):
     print("="*80)
 
     # Initialize preprocessor
-    preprocessor = TransactionPreprocessor()
+    preprocessor = Preprocessor()
 
     # Fit preprocessor on training data
-    X_train, y_train = preprocessor.transform(train_df, fit=True)
-    X_val, y_val = preprocessor.transform(val_df, fit=False)
-    X_test, y_test = preprocessor.transform(test_df, fit=False)
+    X_train, _ = preprocessor.transform(train_df, fit=True)
+    X_val, _ = preprocessor.transform(val_df, fit=False)
+    X_test, _ = preprocessor.transform(test_df, fit=False)
+
+    # Extract labels
+    y_train = train_df['isFraud'].values
+    y_val = val_df['isFraud'].values
+    y_test = test_df['isFraud'].values
 
     print(f"Training features shape: {X_train.shape}")
 
@@ -66,8 +72,8 @@ def train_traditional_models(train_df, val_df, test_df, models_dir):
     ensemble.xgb_model.fit(X_train, y_train)
 
     # Evaluate on validation set
-    y_val_pred = ensemble.predict(val_df)
     y_val_proba = ensemble.predict_proba(val_df).flatten()
+    y_val_pred = (y_val_proba > 0.5).astype(int)
 
     print("\n--- Validation Set Performance ---")
     print(classification_report(y_val, y_val_pred))
@@ -97,19 +103,39 @@ def train_lstm_model(train_df, val_df, test_df, models_dir):
 
     # Initialize sequence preprocessor
     sequence_length = 10
+
+    seq_preprocessor = SequencePreprocessor(sequence_length=sequence_length)
+
+    # First add basic preprocessing features
+    print("Adding basic preprocessing features...")
+    label_encoder = LabelEncoder()
+
+    # Make copies and add basic features
+    train_df_prep = train_df.copy()
+    val_df_prep = val_df.copy()
+    test_df_prep = test_df.copy()
+
+    for df in [train_df_prep, val_df_prep, test_df_prep]:
+        df['hour'] = df['step'] % 24
+        df['day'] = df['step'] // 24
+        df['amount_log'] = np.log1p(df['amount'])
+
+    # Fit label encoder on train, transform all
+    train_df_prep['type_encoded'] = label_encoder.fit_transform(train_df_prep['type'])
+    val_df_prep['type_encoded'] = label_encoder.transform(val_df_prep['type'])
+    test_df_prep['type_encoded'] = label_encoder.transform(test_df_prep['type'])
+
+    # Now add temporal features (using static method)
+    print("Engineering temporal features...")
+    train_df_temporal = TemporalFeatureEngineer.add_temporal_features(train_df_prep)
+    val_df_temporal = TemporalFeatureEngineer.add_temporal_features(val_df_prep)
+    test_df_temporal = TemporalFeatureEngineer.add_temporal_features(test_df_prep)
+
+    # Define feature columns
     feature_cols = [
         'amount', 'amount_log', 'oldbalanceOrg', 'newbalanceOrig',
         'oldbalanceDest', 'newbalanceDest', 'hour', 'day', 'type_encoded'
     ]
-
-    seq_preprocessor = SequencePreprocessor(sequence_length=sequence_length)
-    temporal_engineer = TemporalFeatureEngineer()
-
-    # Engineer temporal features
-    print("Engineering temporal features...")
-    train_df_temporal = temporal_engineer.fit_transform(train_df.copy())
-    val_df_temporal = temporal_engineer.transform(val_df.copy())
-    test_df_temporal = temporal_engineer.transform(test_df.copy())
 
     # Update feature columns with temporal features
     temporal_features = ['hour_of_day', 'day_of_month', 'is_weekend', 'is_night',
@@ -119,9 +145,9 @@ def train_lstm_model(train_df, val_df, test_df, models_dir):
 
     # Create sequences
     print("Creating sequences...")
-    X_train_seq, y_train_seq = seq_preprocessor.fit_transform(train_df_temporal, extended_features)
-    X_val_seq, y_val_seq = seq_preprocessor.transform(val_df_temporal, extended_features)
-    X_test_seq, y_test_seq = seq_preprocessor.transform(test_df_temporal, extended_features)
+    X_train_seq, y_train_seq = seq_preprocessor.create_sequences(train_df_temporal, extended_features)
+    X_val_seq, y_val_seq = seq_preprocessor.create_sequences(val_df_temporal, extended_features)
+    X_test_seq, y_test_seq = seq_preprocessor.create_sequences(test_df_temporal, extended_features)
 
     print(f"Training sequences shape: {X_train_seq.shape}")
     print(f"Validation sequences shape: {X_val_seq.shape}")
@@ -129,19 +155,22 @@ def train_lstm_model(train_df, val_df, test_df, models_dir):
     # Initialize LSTM model
     n_features = X_train_seq.shape[2]
     lstm_model = LSTMFraudDetector(sequence_length=sequence_length, n_features=n_features)
-    lstm_model.build_model()
 
-    # Train LSTM
+    # Train LSTM (combine train and val for now, use validation_split)
     print("\nTraining LSTM...")
-    history = lstm_model.train(
-        X_train_seq, y_train_seq,
-        X_val_seq, y_val_seq,
+    # Combine train and validation data for internal split
+    X_combined = np.concatenate([X_train_seq, X_val_seq], axis=0)
+    y_combined = np.concatenate([y_train_seq, y_val_seq], axis=0)
+
+    history = lstm_model.fit(
+        X_combined, y_combined,
+        validation_split=0.15,  # Use 15% for validation
         epochs=50,
         batch_size=128
     )
 
     # Evaluate on validation set
-    y_val_pred_proba = lstm_model.predict(X_val_seq)
+    y_val_pred_proba = lstm_model.predict_proba(X_val_seq)
     y_val_pred = (y_val_pred_proba > 0.5).astype(int).flatten()
 
     print("\n--- LSTM Validation Set Performance ---")
@@ -151,72 +180,59 @@ def train_lstm_model(train_df, val_df, test_df, models_dir):
     # Save LSTM model
     lstm_path = os.path.join(models_dir, 'lstm_model')
     seq_preprocessor_path = os.path.join(models_dir, 'sequence_preprocessor.joblib')
-    temporal_engineer_path = os.path.join(models_dir, 'temporal_engineer.joblib')
 
     lstm_model.save(lstm_path)
     joblib.dump(seq_preprocessor, seq_preprocessor_path)
-    joblib.dump(temporal_engineer, temporal_engineer_path)
 
     print(f"\nSaved LSTM model to: {lstm_path}")
     print(f"Saved Sequence Preprocessor to: {seq_preprocessor_path}")
-    print(f"Saved Temporal Engineer to: {temporal_engineer_path}")
 
-    return lstm_model, seq_preprocessor, temporal_engineer, X_test_seq, y_test_seq
+    return lstm_model, seq_preprocessor, X_test_seq, y_test_seq
 
 
-def train_cnn_model(train_df, val_df, test_df, seq_preprocessor, temporal_engineer, models_dir):
+def train_cnn_model(train_df, val_df, test_df, preprocessor, models_dir):
     """Train 1D CNN model for feature extraction"""
     print("\n" + "="*80)
     print("TRAINING CNN MODEL (1D Feature Extraction)")
     print("="*80)
 
-    sequence_length = 10
-    feature_cols = [
-        'amount', 'amount_log', 'oldbalanceOrg', 'newbalanceOrig',
-        'oldbalanceDest', 'newbalanceDest', 'hour', 'day', 'type_encoded'
-    ]
+    # Use preprocessor to get flat features (CNN treats features as 1D signal)
+    print("Preparing features for CNN...")
+    X_train, _ = preprocessor.transform(train_df, fit=False)
+    X_val, _ = preprocessor.transform(val_df, fit=False)
+    X_test, _ = preprocessor.transform(test_df, fit=False)
 
-    # Use same temporal features as LSTM
-    temporal_features = ['hour_of_day', 'day_of_month', 'is_weekend', 'is_night',
-                         'time_since_last_txn', 'rolling_avg_amount', 'rolling_std_amount',
-                         'balance_change_rate', 'amount_deviation']
-    extended_features = feature_cols + temporal_features
+    # Extract labels
+    y_train = train_df['isFraud'].values
+    y_val = val_df['isFraud'].values
+    y_test = test_df['isFraud'].values
 
-    # Engineer temporal features
-    print("Engineering temporal features...")
-    train_df_temporal = temporal_engineer.transform(train_df.copy())
-    val_df_temporal = temporal_engineer.transform(val_df.copy())
-    test_df_temporal = temporal_engineer.transform(test_df.copy())
-
-    # Create sequences (reuse seq_preprocessor)
-    print("Creating sequences...")
-    X_train_seq, y_train_seq = seq_preprocessor.transform(train_df_temporal, extended_features)
-    X_val_seq, y_val_seq = seq_preprocessor.transform(val_df_temporal, extended_features)
-    X_test_seq, y_test_seq = seq_preprocessor.transform(test_df_temporal, extended_features)
-
-    print(f"Training sequences shape: {X_train_seq.shape}")
+    print(f"Training features shape: {X_train.shape}")
 
     # Initialize CNN model
-    n_features = X_train_seq.shape[2]
-    cnn_model = CNN1DFraudDetector(sequence_length=sequence_length, n_features=n_features)
-    cnn_model.build_model()
+    n_features = X_train.shape[1]
+    cnn_model = CNN1DFraudDetector(n_features=n_features)
 
-    # Train CNN
+    # Train CNN (combine train and val, use validation_split)
     print("\nTraining CNN...")
-    history = cnn_model.train(
-        X_train_seq, y_train_seq,
-        X_val_seq, y_val_seq,
+    # Combine train and validation data for internal split
+    X_combined = np.concatenate([X_train, X_val], axis=0)
+    y_combined = np.concatenate([y_train, y_val], axis=0)
+
+    history = cnn_model.fit(
+        X_combined, y_combined,
+        validation_split=0.15,  # Use 15% for validation
         epochs=50,
         batch_size=128
     )
 
     # Evaluate on validation set
-    y_val_pred_proba = cnn_model.predict(X_val_seq)
+    y_val_pred_proba = cnn_model.predict_proba(X_val)
     y_val_pred = (y_val_pred_proba > 0.5).astype(int).flatten()
 
     print("\n--- CNN Validation Set Performance ---")
-    print(classification_report(y_val_seq, y_val_pred))
-    print(f"ROC-AUC: {roc_auc_score(y_val_seq, y_val_pred_proba):.4f}")
+    print(classification_report(y_val, y_val_pred))
+    print(f"ROC-AUC: {roc_auc_score(y_val, y_val_pred_proba):.4f}")
 
     # Save CNN model
     cnn_path = os.path.join(models_dir, 'cnn_model')
@@ -224,11 +240,11 @@ def train_cnn_model(train_df, val_df, test_df, seq_preprocessor, temporal_engine
 
     print(f"\nSaved CNN model to: {cnn_path}")
 
-    return cnn_model, X_test_seq, y_test_seq
+    return cnn_model, X_test, y_test
 
 
 def evaluate_ensemble(rf_model, xgb_model, lstm_model, cnn_model,
-                      preprocessor, seq_preprocessor, temporal_engineer,
+                      preprocessor, seq_preprocessor,
                       test_df, X_test_seq, y_test_seq, models_dir):
     """Evaluate the multi-model ensemble"""
     print("\n" + "="*80)
@@ -239,13 +255,14 @@ def evaluate_ensemble(rf_model, xgb_model, lstm_model, cnn_model,
     ensemble = MultiModelEnsemble(rf_model, xgb_model, lstm_model, cnn_model)
 
     # Prepare test data
-    X_test_tabular, y_test = preprocessor.transform(test_df, fit=False)
+    X_test_tabular, _ = preprocessor.transform(test_df, fit=False)
+    y_test = test_df['isFraud'].values
 
     # Get ensemble predictions
     print("Generating ensemble predictions...")
-    predictions_dict = ensemble.predict_proba(X_test_tabular, X_test_seq)
+    ensemble_proba, predictions_dict = ensemble.predict_proba(X_test_tabular, X_test_seq)
 
-    ensemble_proba = predictions_dict['ensemble'].flatten()
+    ensemble_proba = ensemble_proba.flatten()
     ensemble_pred = (ensemble_proba > 0.5).astype(int)
 
     print("\n--- Ensemble Test Set Performance ---")
@@ -286,9 +303,11 @@ def main():
     print("FRAUD DETECTION MVP - DEEP LEARNING MODEL TRAINING")
     print("="*80)
 
-    # Paths
-    data_path = r"C:\xai-fincrime-poc-starter\xai-fincrime-poc\data\processed\paysim_sample.csv"
-    models_dir = r"C:\xai-fincrime-poc-starter\xai-fincrime-poc\data\models"
+    # Paths - Use relative paths from backend directory
+    backend_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(backend_dir)
+    data_path = os.path.join(project_root, "data", "processed", "paysim_sample.csv")
+    models_dir = os.path.join(project_root, "data", "models")
 
     # Create models directory if it doesn't exist
     os.makedirs(models_dir, exist_ok=True)
@@ -302,13 +321,13 @@ def main():
     )
 
     # Train LSTM model
-    lstm_model, seq_preprocessor, temporal_engineer, X_test_seq_lstm, y_test_seq_lstm = train_lstm_model(
+    lstm_model, seq_preprocessor, X_test_seq_lstm, y_test_seq_lstm = train_lstm_model(
         train_df, val_df, test_df, models_dir
     )
 
-    # Train CNN model (reuses seq_preprocessor and temporal_engineer)
-    cnn_model, X_test_seq_cnn, y_test_seq_cnn = train_cnn_model(
-        train_df, val_df, test_df, seq_preprocessor, temporal_engineer, models_dir
+    # Train CNN model (uses flat features)
+    cnn_model, X_test_cnn, y_test_cnn = train_cnn_model(
+        train_df, val_df, test_df, preprocessor, models_dir
     )
 
     # Evaluate multi-model ensemble
@@ -319,7 +338,6 @@ def main():
         cnn_model,
         preprocessor,
         seq_preprocessor,
-        temporal_engineer,
         test_df,
         X_test_seq_lstm,
         y_test_seq_lstm,
@@ -337,7 +355,6 @@ def main():
     print("  - cnn_model/")
     print("  - preprocessor.joblib")
     print("  - sequence_preprocessor.joblib")
-    print("  - temporal_engineer.joblib")
     print("  - ensemble_config.json")
 
 

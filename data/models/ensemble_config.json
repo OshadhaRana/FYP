@@ -1,0 +1,31 @@
+{
+  "weights": {
+    "rf": 0.25,
+    "xgb": 0.3,
+    "lstm": 0.25,
+    "cnn": 0.2
+  },
+  "sequence_length": 10,
+  "feature_columns": [
+    "amount",
+    "amount_log",
+    "oldbalanceOrg",
+    "newbalanceOrig",
+    "oldbalanceDest",
+    "newbalanceDest",
+    "hour",
+    "day",
+    "type_encoded"
+  ],
+  "temporal_features": [
+    "hour_of_day",
+    "day_of_month",
+    "is_weekend",
+    "is_night",
+    "time_since_last_txn",
+    "rolling_avg_amount",
+    "rolling_std_amount",
+    "balance_change_rate",
+    "amount_deviation"
+  ]
+}

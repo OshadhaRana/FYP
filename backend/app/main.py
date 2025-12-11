@@ -7,11 +7,11 @@ import os
 import joblib
 import json
 
-from backend.app.core.config import ALLOW_ORIGINS, MODEL_DIR
-from backend.app.models.deep_learning_models import LSTMFraudDetector, CNN1DFraudDetector, MultiModelEnsemble
-from backend.app.utils.preprocessing import TransactionPreprocessor
-from backend.app.utils.sequence_preprocessing import SequencePreprocessor, TemporalFeatureEngineer
-from backend.app.explainers.deep_learning_explainer import EnsembleExplainer
+from app.core.config import ALLOW_ORIGINS, MODEL_DIR
+from app.models.deep_learning_models import LSTMFraudDetector, CNN1DFraudDetector, MultiModelEnsemble
+from app.utils.preprocessing import Preprocessor
+from app.utils.sequence_preprocessing import SequencePreprocessor, TemporalFeatureEngineer
+from app.explainers.deep_learning_explainer import EnsembleExplainer
 
 # ----------------------------
 # FastAPI app setup
@@ -48,13 +48,12 @@ class ExplainRequest(BaseModel):
 fraud_model = None  # Multi-model ensemble
 preprocessor = None
 seq_preprocessor = None
-temporal_engineer = None
 ensemble_explainer = None
 ensemble_config = None
 
 @app.on_event("startup")
 async def load_models():
-    global fraud_model, preprocessor, seq_preprocessor, temporal_engineer, ensemble_explainer, ensemble_config
+    global fraud_model, preprocessor, seq_preprocessor, ensemble_explainer, ensemble_config
 
     try:
         # Load traditional models
@@ -68,7 +67,6 @@ async def load_models():
         # Load preprocessors
         preprocessor = joblib.load(os.path.join(MODEL_DIR, 'preprocessor.joblib'))
         seq_preprocessor = joblib.load(os.path.join(MODEL_DIR, 'sequence_preprocessor.joblib'))
-        temporal_engineer = joblib.load(os.path.join(MODEL_DIR, 'temporal_engineer.joblib'))
 
         # Load ensemble config
         with open(os.path.join(MODEL_DIR, 'ensemble_config.json'), 'r') as f:
@@ -87,7 +85,7 @@ async def load_models():
         print(f"Warning: Could not load all models: {e}")
         print("Using fallback initialization...")
         # Fallback for POC
-        preprocessor = TransactionPreprocessor()
+        preprocessor = Preprocessor()
         fraud_model = None
 
 # ----------------------------
@@ -106,9 +104,18 @@ async def predict_fraud(transaction: Transaction):
 
         # Prepare sequence data (for single transaction, create a dummy sequence)
         # In production, you'd look up user's recent transactions
-        df_temporal = temporal_engineer.transform(df.copy())
+        # Add basic preprocessing features first
+        df_prep = df.copy()
+        df_prep['hour'] = df_prep['step'] % 24
+        df_prep['day'] = df_prep['step'] // 24
+        df_prep['amount_log'] = np.log1p(df_prep['amount'])
+        # Add dummy nameOrig if not present (needed for sequence preprocessing)
+        if 'nameOrig' not in df_prep.columns:
+            df_prep['nameOrig'] = 'UNKNOWN'
+
+        df_temporal = TemporalFeatureEngineer.add_temporal_features(df_prep)
         feature_cols = ensemble_config['feature_columns'] + ensemble_config['temporal_features']
-        X_seq, _ = seq_preprocessor.transform(df_temporal, feature_cols)
+        X_seq, _ = seq_preprocessor.create_sequences(df_temporal, feature_cols)
 
         # Get predictions from ensemble
         predictions_dict = fraud_model.predict_proba(X_tabular, X_seq)
@@ -151,9 +158,18 @@ async def explain_transaction(request: ExplainRequest):
         X_tabular, _ = preprocessor.transform(df, fit=False)
 
         # Prepare sequence data
-        df_temporal = temporal_engineer.transform(df.copy())
+        # Add basic preprocessing features first
+        df_prep = df.copy()
+        df_prep['hour'] = df_prep['step'] % 24
+        df_prep['day'] = df_prep['step'] // 24
+        df_prep['amount_log'] = np.log1p(df_prep['amount'])
+        # Add dummy nameOrig if not present (needed for sequence preprocessing)
+        if 'nameOrig' not in df_prep.columns:
+            df_prep['nameOrig'] = 'UNKNOWN'
+
+        df_temporal = TemporalFeatureEngineer.add_temporal_features(df_prep)
         feature_cols = ensemble_config['feature_columns'] + ensemble_config['temporal_features']
-        X_seq, _ = seq_preprocessor.transform(df_temporal, feature_cols)
+        X_seq, _ = seq_preprocessor.create_sequences(df_temporal, feature_cols)
 
         # Get ensemble prediction
         predictions_dict = fraud_model.predict_proba(X_tabular, X_seq)
