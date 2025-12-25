@@ -123,9 +123,6 @@ curl -X POST http://localhost:8000/predict \
 [Oshadha Ranatunga]  
 [APIIT (Staffordshire University)]  
 Final Year Project 2024/2025
-
-Supervisor: [Supervisor Name]
-
 ---
 
 *Note: Model files are not included in the repo due to size. Run the training scripts to generate them.*
