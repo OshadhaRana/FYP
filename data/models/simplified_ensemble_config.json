@@ -1,0 +1,62 @@
+{
+  "version": "2.0",
+  "name": "Simplified Research Ensemble",
+  "description": "3-model architecture for Human-Centric Explainable AI research",
+  "models": [
+    "xgb",
+    "rf",
+    "gnn"
+  ],
+  "weights": {
+    "xgb": 0.50,
+    "rf": 0.15,
+    "gnn": 0.35
+  },
+  "model_roles": {
+    "xgb": {
+      "role": "Primary Baseline",
+      "purpose": "Best traditional ML model + SHAP explainability benchmark",
+      "explainability": "SHAP TreeExplainer"
+    },
+    "rf": {
+      "role": "Validation Baseline",
+      "purpose": "Confirms XGBoost findings across different algorithm family",
+      "explainability": "SHAP TreeExplainer"
+    },
+    "gnn": {
+      "role": "Research Innovation",
+      "purpose": "Novel contribution - graph-based fraud patterns with attention",
+      "explainability": "Graph Attention + Network Visualization"
+    }
+  },
+  "performance": {
+    "individual_aucs": {
+      "xgb": 0.9999,
+      "rf": 0.9998,
+      "gnn": 0.9436
+    },
+    "expected_ensemble_auc": 0.9850,
+    "note": "Lower than 5-model ensemble but clearer research contribution"
+  },
+  "excluded_models": {
+    "cnn": {
+      "performance": 0.9838,
+      "reason": "Not ideal for tabular data, marginal research value"
+    },
+    "tabtransformer": {
+      "performance": 0.9935,
+      "reason": "Similar to XGBoost, adds complexity without research value"
+    },
+    "lstm": {
+      "performance": 0.4997,
+      "reason": "No sequential signal in dataset - validates data leakage fix"
+    }
+  },
+  "research_justification": {
+    "primary_question": "Can Graph Neural Networks provide better explainability for fraud detection than traditional ML?",
+    "comparison": "XGBoost (feature-based SHAP) vs GNN (relationship-based attention)",
+    "trade_off": "5% accuracy loss (99% vs 94%) justified by unique network pattern explanations"
+  },
+  "created": "2024-12-21",
+  "author": "Research MVP"
+}

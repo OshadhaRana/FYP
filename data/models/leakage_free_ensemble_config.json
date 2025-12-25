@@ -1,0 +1,27 @@
+{
+  "models": [
+    "rf",
+    "xgb",
+    "cnn",
+    "tabtransformer"
+  ],
+  "weights": {
+    "rf": 0.3,
+    "xgb": 0.35,
+    "cnn": 0.2,
+    "tabtransformer": 0.15
+  },
+  "performance": {
+    "test_auc": 0.9995969117288868,
+    "individual_aucs": {
+      "rf": 0.9997591794460443,
+      "xgb": 0.9998721833126955,
+      "cnn": 0.9838175545278726,
+      "tabtransformer": 0.9935227575142942
+    }
+  },
+  "excluded_models": {
+    "gnn": "Data leakage (fraud rate in nodes, future balance in edges)",
+    "lstm": "No sequential signal (50% AUC - random chance)"
+  }
+}

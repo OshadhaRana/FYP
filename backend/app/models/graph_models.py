@@ -86,15 +86,15 @@ class TemporalGraphBuilder:
         - Total transaction volume (sent/received)
         - Number of transactions
         - Average transaction amount
-        - Fraud rate (for training)
         - Account activity pattern
-        """
-        node_features = np.zeros((num_nodes, 8))  # 8 features per node
 
-        # Group by origin account
+        FIXED: Removed fraud rate to prevent target leakage
+        """
+        node_features = np.zeros((num_nodes, 7))  # 7 features per node (was 8)
+
+        # Group by origin account - REMOVED isFraud aggregation
         origin_stats = df.groupby('nameOrig').agg({
             'amount': ['sum', 'mean', 'count'],
-            'isFraud': 'mean',
             'step': ['min', 'max']
         })
 
@@ -110,14 +110,13 @@ class TemporalGraphBuilder:
                 node_features[idx, 0] = stats[('amount', 'sum')]  # Total sent
                 node_features[idx, 1] = stats[('amount', 'mean')]  # Avg sent
                 node_features[idx, 2] = stats[('amount', 'count')]  # Num sent
-                node_features[idx, 3] = stats[('isFraud', 'mean')]  # Fraud rate
-                node_features[idx, 6] = stats[('step', 'max')] - stats[('step', 'min')]  # Activity span
+                node_features[idx, 5] = stats[('step', 'max')] - stats[('step', 'min')]  # Activity span
 
             if account in dest_stats.index:
                 stats = dest_stats.loc[account]
-                node_features[idx, 4] = stats[('amount', 'sum')]  # Total received
-                node_features[idx, 5] = stats[('amount', 'mean')]  # Avg received
-                node_features[idx, 7] = stats[('amount', 'count')]  # Num received
+                node_features[idx, 3] = stats[('amount', 'sum')]  # Total received
+                node_features[idx, 4] = stats[('amount', 'mean')]  # Avg received
+                node_features[idx, 6] = stats[('amount', 'count')]  # Num received
 
         # Normalize features
         node_features = torch.FloatTensor(node_features)
@@ -147,12 +146,13 @@ class TemporalGraphBuilder:
             # Edge index (directed graph)
             edge_index.append([src_idx, dst_idx])
 
-            # Edge features (7 features)
+            # Edge features (7 features) - FIXED: Removed data leakage
+            # Removed balance change rate that used newbalanceOrig (future information)
             features = [
                 np.log1p(row['amount']),  # Log amount
                 row.get('hour', row['step'] % 24) / 24.0,  # Normalized hour
-                row['oldbalanceOrg'] / (row['oldbalanceOrg'] + 1),  # Balance utilization
-                (row['oldbalanceOrg'] - row['newbalanceOrig']) / (row['oldbalanceOrg'] + 1),  # Balance change rate
+                row['oldbalanceOrg'] / (row['oldbalanceOrg'] + 1),  # Balance utilization (before txn)
+                row['oldbalanceDest'] / (row['oldbalanceDest'] + 1),  # Dest balance utilization (before txn)
                 1 if row['type'] == 'TRANSFER' else 0,  # Type: TRANSFER
                 1 if row['type'] == 'CASH_OUT' else 0,  # Type: CASH_OUT
                 1 if row['type'] == 'PAYMENT' else 0,  # Type: PAYMENT
@@ -334,8 +334,8 @@ class GNNFraudDetectorWrapper:
     Compatible with existing ensemble architecture
     """
 
-    def __init__(self, node_features: int = 8, edge_features: int = 7, hidden_dim: int = 64):
-        """Initialize GNN wrapper"""
+    def __init__(self, node_features: int = 7, edge_features: int = 7, hidden_dim: int = 64):
+        """Initialize GNN wrapper - FIXED: 7 node features (was 8, removed fraud rate)"""
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model = GNNFraudDetector(node_features, edge_features, hidden_dim).to(self.device)
         self.graph_builder = TemporalGraphBuilder()
@@ -446,10 +446,10 @@ class GNNFraudDetectorWrapper:
         }, path)
 
     @staticmethod
-    def load(path: str, node_features: int = 8, edge_features: int = 7, hidden_dim: int = 64):
-        """Load GNN model"""
+    def load(path: str, node_features: int = 7, edge_features: int = 7, hidden_dim: int = 64):
+        """Load GNN model - FIXED: 7 node features (was 8)"""
         wrapper = GNNFraudDetectorWrapper(node_features, edge_features, hidden_dim)
-        checkpoint = torch.load(path)
+        checkpoint = torch.load(path, weights_only=False)
         wrapper.model.load_state_dict(checkpoint['model_state_dict'])
         wrapper.graph_builder = checkpoint['graph_builder']
         return wrapper

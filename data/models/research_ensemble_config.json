@@ -1,0 +1,38 @@
+{
+  "weights": {
+    "rf": 0.15,
+    "xgb": 0.15,
+    "lstm": 0.15,
+    "cnn": 0.1,
+    "gnn": 0.25,
+    "tabtransformer": 0.2
+  },
+  "model_performance": {
+    "rf": {
+      "auc": 0.9984365504463099,
+      "weight": 0.15
+    },
+    "xgb": {
+      "auc": 0.999485155294411,
+      "weight": 0.15
+    },
+    "lstm": {
+      "auc": 0.4970892441587025,
+      "weight": 0.15
+    },
+    "cnn": {
+      "auc": 0.9859994102892882,
+      "weight": 0.1
+    },
+    "gnn": {
+      "auc": 1.0,
+      "weight": 0.25
+    },
+    "tabtransformer": {
+      "auc": 0.9945066321898428,
+      "weight": 0.2
+    }
+  },
+  "ensemble_auc": 0.9999380316360931,
+  "timestamp": "2025-12-14T15:51:27.916529"
+}

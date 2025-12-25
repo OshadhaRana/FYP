@@ -8,9 +8,10 @@ class Preprocessor:
         self.label_encoders = {}
 
     def _ensure_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        # Removed newbalanceOrig and newbalanceDest to prevent data leakage
+        # These features represent balance AFTER transaction, not available at prediction time
         expected = [
-            'step','type','amount','oldbalanceOrg','newbalanceOrig',
-            'oldbalanceDest','newbalanceDest'
+            'step','type','amount','oldbalanceOrg','oldbalanceDest'
         ]
         for col in expected:
             if col not in df.columns:
@@ -30,9 +31,11 @@ class Preprocessor:
         else:
             df['type_encoded'] = self.label_encoders['type'].transform(df['type'])
 
+        # Removed newbalanceOrig and newbalanceDest to prevent data leakage
+        # Feature count reduced from 9 to 7
         feature_cols = [
-            'amount','amount_log','oldbalanceOrg','newbalanceOrig',
-            'oldbalanceDest','newbalanceDest','hour','day','type_encoded'
+            'amount','amount_log','oldbalanceOrg','oldbalanceDest',
+            'hour','day','type_encoded'
         ]
         X = df[feature_cols].values
         if fit:

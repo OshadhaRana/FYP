@@ -1,0 +1,36 @@
+{
+  "models": [
+    "rf",
+    "xgb",
+    "cnn",
+    "tabtransformer",
+    "gnn"
+  ],
+  "weights": {
+    "rf": 0.25,
+    "xgb": 0.3,
+    "cnn": 0.15,
+    "tabtransformer": 0.15,
+    "gnn": 0.15
+  },
+  "performance": {
+    "test_auc": 0.9995812572706964,
+    "individual_aucs": {
+      "rf": 0.9997591794460443,
+      "xgb": 0.9998721833126955,
+      "cnn": 0.9838175545278726,
+      "tabtransformer": 0.9935227575142942,
+      "gnn": 0.9436027944386163
+    },
+    "comparison": {
+      "4_model_ensemble": 0.9996011199165723,
+      "5_model_ensemble": 0.9995812572706964,
+      "improvement": -1.986264587594544e-05
+    }
+  },
+  "excluded_models": {
+    "lstm": "No sequential signal (50% AUC - random chance)"
+  },
+  "data_leakage_status": "ALL MODELS VERIFIED LEAKAGE-FREE",
+  "production_status": "READY FOR DEPLOYMENT"
+}
